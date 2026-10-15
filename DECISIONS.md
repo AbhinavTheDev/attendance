@@ -1,0 +1,13 @@
+# DECISIONS.md  (about 150-200 words in total - plain language, your own words)
+
+1. **Indexes.** Which indexes did you create, and which query or guarantee does each one serve? Which one did you consider and reject?
+2. **Punch-in race.** Two identical punch-in requests arrive at the same instant. Walk through exactly what happens in your code.
+3. **Ties.** Two employees are tied on late minutes at the cutoff of `limit`. What does your leaderboard return, and why?
+4. **Headcount.** How does your department summary make sure employees with zero logs are counted?
+5. **One thing you would change** if this had to serve 100x the data.
+
+A1. **Indexes**. We created unique indexes on employees.emp_code and attendance_logs.(emp_code, date) to enforce data integrity and indentity keys (As it is described in DATA_MODEL.md that this keys are the ones which used or identifying the docs hence these should act as primary keys). For analytics, we added compound indexes on employees.(department, joined_on) and attendance_logs.(date, late_minutes) to ensure queries use index scans (IXSCAN). Standalone indexes for fields like status were rejected because compound date indexes already cover the query paths efficiently and it just over burden the db.
+A2. **Punch-in race**. The endpoint first performs an application-level find_one() check. If two identical requests hit concurrently, MongoDB's unique compound index on (emp_code, date) acts as the database safety net similar to SQL locks: one write succeeds with 201, while the duplicate write fails on the unique constraint and returns 409.
+A3. **Ties**. We return all employees tied at or below the cutoff rank (which may exceed limit). Under standard competition ranking, employees with equal late minutes share the same rank (e.g., 1, 2, 2, 4). Filtering by rank <= limit ensures no employee get dropped due to secondary sorting.
+A4. **Headcount**. The department summary endpoint starts by querying the employees collection (filtering joined_on <= end_date). Headcount is incremented for every active employee before joining attendance_logs. Logs are only used for attendance and other metrics, so zero-log employees will also count in headcount despite of its attendance logs numbers.
+A5. **One thing I would change**. I would implement pre-aggregation (daily/monthly cron jobs / workers) so that analytics data and queries don't compute on the fly and get computed separately on a scheduled environment and then utilized by whole system. This will be my first and quicker approach. But if I need more cost optimized and scalable solution then caching (Redis) is best route go for for efficient, scalable and optimized solutions for faster inference.
